@@ -14,7 +14,7 @@ from statsmodels.tsa.api import Holt
 # -----------------------------------------------------------------------------
 st.set_page_config(
     page_title="Marketing Attribution & Revenue Forecasting Engine",
-    page_icon="📊",
+    page_icon=" ",
     layout="wide"
 )
 
