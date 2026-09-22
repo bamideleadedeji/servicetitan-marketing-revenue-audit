@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 # ML & Statistical Forecasting Libraries
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import PolynomialFeatures
-from statsmodels.tsa.api import SimpleExpSmoothing, Holt
+from statsmodels.tsa.api import Holt
 
 # -----------------------------------------------------------------------------
 # PAGE CONFIGURATION
@@ -22,7 +22,8 @@ st.title("📊 Marketing Performance, Forensic Audit & Predictive Forecasting En
 st.markdown("""
 **Executive Summary:** Reconciles multi-channel ad spend, call tracking logs, and ServiceTitan CRM records. 
 It performs forensic audit checks to detect vendor over-attribution ("ghost leads"), evaluates unit economics 
-(**CAC**, **LTV**, **Margin ROAS**), and incorporates **time-series predictive modeling** to forecast revenue trajectories and future CAC.
+(**CAC**, **LTV**, **Margin ROAS**), and incorporates **time-series predictive modeling with 95% Confidence Intervals** 
+to forecast revenue trajectories.
 """)
 
 st.sidebar.header("⚙️ Audit & Forecast Control Panel")
@@ -33,7 +34,7 @@ st.sidebar.header("⚙️ Audit & Forecast Control Panel")
 @st.cache_data
 def generate_audit_data():
     np.random.seed(42)
-    n_days = 120  # 120 days of historical data for statistical time-series forecasting
+    n_days = 120  # 120 days of historical data for statistical forecasting
     dates = pd.date_range(start="2026-05-01", periods=n_days, freq="D")
     
     channels = ["Meta Ads", "Google Search", "External Lead Vendor A", "External Lead Vendor B", "Organic Search"]
@@ -43,7 +44,6 @@ def generate_audit_data():
     customer_id_counter = 1000
     
     for i, date in enumerate(dates):
-        # Adding a slight upward growth trend over time
         growth_factor = 1 + (i * 0.003)
         
         for channel in channels:
@@ -153,7 +153,7 @@ col4.metric("Unmatched / Ghost Leads", f"{int(total_ghost_leads):,} leads", delt
 st.markdown("---")
 
 # -----------------------------------------------------------------------------
-# STEP 4: TABS SETUP INCLUDING TIME-SERIES FORECASTING
+# STEP 4: TABS SETUP
 # -----------------------------------------------------------------------------
 tab1, tab2, tab3, tab4 = st.tabs([
     "🕵️ Forensic Audit & Attribution", 
@@ -228,7 +228,7 @@ with tab3:
 
 # TAB 4: TIME-SERIES FORECASTING WITH 95% CONFIDENCE INTERVALS
 with tab4:
-    st.subheader(" Predictive Time-Series Revenue Forecasting with 95% Confidence Intervals")
+    st.subheader("🔮 Predictive Time-Series Revenue Forecasting with 95% Confidence Intervals")
     st.markdown("""
     This forecasting engine projects future ServiceTitan revenue streams while modeling **uncertainty bounds (95% Confidence Interval)** 
     to help leadership plan for best-case, expected, and conservative financial outcomes.
@@ -249,23 +249,21 @@ with tab4:
         model_rev = Holt(daily_ts["ServiceTitan_Verified_Revenue"], initialization_method="estimated").fit()
         forecast_rev = model_rev.forecast(forecast_horizon)
         
-        # Calculate residual variance for prediction interval (95% CI -> 1.96 * std_error)
+        # Residual variance for prediction interval (95% CI -> 1.96 * std_error)
         residuals = model_rev.resid
         sigma = np.std(residuals)
         
-        # Standard error scales over forecast horizon step t
         horizon_steps = np.arange(1, forecast_horizon + 1)
         stderr = sigma * np.sqrt(horizon_steps)
         
         upper_bound = forecast_rev + (1.96 * stderr)
-        lower_bound = np.maximum(0, forecast_rev - (1.96 * stderr))  # Prevent negative revenue predictions
+        lower_bound = np.maximum(0, forecast_rev - (1.96 * stderr))
         
-        # Spend Forecast
         model_spend = Holt(daily_ts["Spend"], initialization_method="estimated").fit()
         forecast_spend = model_spend.forecast(forecast_horizon)
 
     else:
-        # SCIKIT-LEARN: Polynomial Regression with Residual Uncertainty Bounds
+        # SCIKIT-LEARN: Polynomial Regression
         daily_ts["Time_Index"] = np.arange(len(daily_ts))
         X = daily_ts[["Time_Index"]]
         y_rev = daily_ts["ServiceTitan_Verified_Revenue"]
@@ -274,18 +272,15 @@ with tab4:
         poly = PolynomialFeatures(degree=2)
         X_poly = poly.fit_transform(X)
         
-        # Train SKLearn Models
         model_rev = LinearRegression().fit(X_poly, y_rev)
         model_spend = LinearRegression().fit(X_poly, y_spend)
         
-        # Future Indices
         future_indices = np.arange(len(daily_ts), len(daily_ts) + forecast_horizon).reshape(-1, 1)
         future_poly = poly.transform(future_indices)
         
         forecast_rev = model_rev.predict(future_poly)
         forecast_spend = model_spend.predict(future_poly)
         
-        # Residual variance for SKLearn bounds
         residuals = y_rev - model_rev.predict(X_poly)
         sigma = np.std(residuals)
         
@@ -314,10 +309,9 @@ with tab4:
         df_future
     ], axis=0).reset_index(drop=True)
     
-    # Plotting Forecast Chart with Plotly Shaded Area
+    # Plotting Forecast Chart
     fig_forecast = go.Figure()
     
-    # Historical Revenue Line
     hist_mask = combined_ts["Type"] == "Historical"
     fig_forecast.add_trace(go.Scatter(
         x=combined_ts.loc[hist_mask, "Date"], 
@@ -325,21 +319,18 @@ with tab4:
         mode="lines", name="Historical Revenue", line=dict(color="#0EA5E9", width=2)
     ))
     
-    # Continuous forecast dates
     fc_mask = combined_ts["Type"] == "Forecast"
     fc_dates = pd.concat([combined_ts.loc[hist_mask, "Date"].tail(1), combined_ts.loc[fc_mask, "Date"]])
     fc_rev = pd.concat([combined_ts.loc[hist_mask, "ServiceTitan_Verified_Revenue"].tail(1), combined_ts.loc[fc_mask, "ServiceTitan_Verified_Revenue"]])
     fc_upper = pd.concat([combined_ts.loc[hist_mask, "Upper_Bound_95"].tail(1), combined_ts.loc[fc_mask, "Upper_Bound_95"]])
     fc_lower = pd.concat([combined_ts.loc[hist_mask, "Lower_Bound_95"].tail(1), combined_ts.loc[fc_mask, "Lower_Bound_95"]])
     
-    # 95% Confidence Interval Band (Upper Limit)
     fig_forecast.add_trace(go.Scatter(
         x=fc_dates, y=fc_upper,
         mode="lines", line=dict(width=0),
         showlegend=False, hoverinfo="skip"
     ))
     
-    # 95% Confidence Interval Band (Lower Limit + Shading)
     fig_forecast.add_trace(go.Scatter(
         x=fc_dates, y=fc_lower,
         mode="lines", line=dict(width=0),
@@ -347,7 +338,6 @@ with tab4:
         name="95% Confidence Interval", hoverinfo="skip"
     ))
     
-    # Expected Forecast Mean Line
     fig_forecast.add_trace(go.Scatter(
         x=fc_dates, y=fc_rev,
         mode="lines+markers", name=f"{forecast_horizon}-Day Expected Forecast", 
@@ -361,7 +351,6 @@ with tab4:
     )
     st.plotly_chart(fig_forecast, use_container_width=True)
     
-    # Executive Scenario Metrics (Expected vs Best Case vs Conservative)
     projected_add_rev = df_future["ServiceTitan_Verified_Revenue"].sum()
     projected_upper_rev = df_future["Upper_Bound_95"].sum()
     projected_lower_rev = df_future["Lower_Bound_95"].sum()
